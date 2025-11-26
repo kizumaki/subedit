@@ -82,7 +82,7 @@ FONT_COLORS_RGB_150 = generate_vibrant_rgb_colors(150)
 speaker_color_map = {}
 used_colors = []
 
-# FIX: Ensure get_speaker_color always pulls RGBColor objects correctly
+# FIX: Ensure get_speaker_color handles RGBColor objects correctly
 def get_speaker_color(speaker_name):
     """Assigns and retrieves a unique color for a given speaker name (for Word Formatter)."""
     global used_colors
@@ -95,13 +95,12 @@ def get_speaker_color(speaker_name):
             random.shuffle(used_colors_raw)
             used_colors = used_colors_raw
             
-        # FIX: Ensure we handle the case where the list might be empty after shuffling, although unlikely
         if used_colors:
             color_object = used_colors.pop()
             speaker_color_map[speaker_name] = color_object
             return color_object
         else:
-            # Fallback to black if color generation somehow fails completely
+            # Fallback to black if color generation fails
             return RGBColor(0, 0, 0)
     
     return speaker_color_map[speaker_name]
@@ -465,7 +464,7 @@ def srt_to_excel_page():
     st.markdown("This function analyzes the SRT file to extract detailed dialogue and corresponding speaker, then exports to an Excel file.")
     st.markdown("---")
     
-    # NOTE: Added this warning to manage user expectation about the Excel file format
+    # NOTE: This warning is necessary due to format limitations (as explained previously)
     st.warning("⚠️ **NOTE ON EXCEL FORMATTING:** The colorful highlighting is for the web preview only and CANNOT be included in the downloaded Excel (.xlsx) file due to format limitations. The downloaded file will contain clean, organized data.")
     st.markdown("---")
 
@@ -510,7 +509,7 @@ def srt_to_excel_page():
         
         output = io.BytesIO()
         
-        # FIX FOR NAMERROR/CORRUPTION: Save the original DataFrame (df_converted) instead of the Styler object
+        # FIX FOR CRASH: Save the original DataFrame (df_converted) instead of the Styler object
         df_converted.to_excel(output, index=False, engine='openpyxl') 
         output.seek(0)
 
