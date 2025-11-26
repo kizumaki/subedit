@@ -22,10 +22,8 @@ def generate_vibrant_rgb_colors(count=150):
     """Generates a list of highly saturated, distinct RGB colors for speaker highlighting."""
     colors = set()
     while len(colors) < count:
-        # Select random Hue, keep Saturation and Value high for vibrancy
         h = random.random(); s = 0.8; v = 0.9 
         
-        # Convert HSV to RGB
         if s == 0.0: r = g = b = v
         else:
             i = int(h * 6.0); f = h * 6.0 - i; p = v * (1.0 - s); q = v * (1.0 - s * f); t = v * (1.0 - s * (1.0 - f))
@@ -37,7 +35,6 @@ def generate_vibrant_rgb_colors(count=150):
             else: r, g, b = v, p, q
         
         r, g, b = int(r * 255), int(g * 255), int(b * 255)
-        # Filter out colors too close to pure black/white
         if (r < 50 and g < 50 and b < 50) or (r > 200 and g > 200 and b > 200): continue 
         colors.add((r, g, b))
     return list(colors)
@@ -63,9 +60,10 @@ def get_speaker_color(speaker_name):
         
     return speaker_color_map[speaker_name]
 
-# Regexes for processing dialogue content (must retain tags for Word styling)
-HTML_TAG_REGEX = re.compile(r'(<[ibu]>.*?<\/[ibu]>|<[ibu]/>)', re.IGNORECASE)
-HTML_CONTENT_REGEX = re.compile(r"<([ibu])>(.*?)<\/\1>", re.IGNORECASE | re.DOTALL) 
+# Regex to find HTML tags (to split the text)
+HTML_SPLIT_REGEX = re.compile(r'(<[ibu]>.*?<\/[ibu]>|<[ibu]/>)', re.IGNORECASE)
+# Regex to extract content and tag name from a matched HTML block
+HTML_EXTRACT_REGEX = re.compile(r"<([ibu])>(.*?)<\/\1>", re.IGNORECASE | re.DOTALL) 
 
 def set_font_and_size(run, font_name, font_size):
     """Applies Font and Size to a specific run."""
@@ -128,11 +126,9 @@ def clean_dialogue_text_for_excel(text):
     Converts HTML/XML style formatting tags (i, b, u) to text enclosed in parentheses ().
     Removes any other HTML/XML tags. Used specifically for the Excel output.
     """
-    # Convert i, b, u tags to parentheses
     text = re.sub(r'<i[^>]*>(.*?)</i[^>]*>', r'(\1)', text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r'<b[^>]*>(.*?)</b[^>]*>', r'(\1)', text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r'<u[^>]*>(.*?)</u[^>]*>', r'(\1)', text, flags=re.IGNORECASE | re.DOTALL)
-    # Remove any other remaining unknown tags
     text = re.sub(r'<[^>]*>', '', text, flags=re.DOTALL)
     return re.sub(r'\s+', ' ', text).strip()
 
@@ -349,26 +345,25 @@ def build_formatted_docx_from_df(df_raw, file_name_without_ext):
                 
             # B.3 Process Dialogue Content for HTML Tags (i, b, u)
             
-            # Split the RAW dialogue text by the HTML tags to separate styled and unstyled parts
-            parts = re.split(HTML_TAG_REGEX, dialogue_text)
+            # Use the fixed logic: Split the RAW dialogue text by the HTML tags
+            parts = re.split(HTML_SPLIT_REGEX, dialogue_text)
             
             for part in parts:
                 if not part:
                     continue
-
-                html_match = HTML_CONTENT_REGEX.match(part)
+                
+                # Check if the part is a standalone HTML tag block
+                html_match = HTML_EXTRACT_REGEX.match(part)
                 
                 if html_match:
                     tag = html_match.group(1).lower()
                     content = html_match.group(2)
                     
                     run = new_paragraph.add_run(content)
-                    # Apply Bold for both <b> and <i> tags
-                    run.font.bold = True 
-                    # Apply Italic only for <i> tags
-                    run.font.italic = (tag == 'i')
+                    run.font.bold = True  # Always Bold if coming from a tag (b or i)
+                    run.font.italic = (tag == 'i') # Italic only if the tag is 'i'
                 else:
-                    # Regular text (unstyled)
+                    # This is regular text (unstyled)
                     new_paragraph.add_run(part)
 
     # C. Apply General Font/Size and Spacing (Global settings)
@@ -432,8 +427,8 @@ def srt_to_excel_page():
     st.markdown("This function analyzes the SRT file to extract detailed dialogue and corresponding speaker, then exports to an Excel file. Highly useful for data control or content analysis.")
     st.markdown("---")
     
-    # NOTE FOR USER: This section explains why coloring is not in the download
-    st.warning("⚠️ **Note on Excel Formatting:** The colorful highlighting you see in the preview is for the web display only and CANNOT be included in the downloaded Excel (.xlsx) file due to file format limitations. The downloaded file will contain clean, organized data.")
+    # NOTE FOR USER: This section explains why coloring is not in the download (FIXED)
+    st.warning("⚠️ **IMPORTANT NOTE ON EXCEL FORMATTING:** The colorful highlighting you see in the preview is for the web display only and CANNOT be included in the downloaded Excel (.xlsx) file due to file format limitations. The downloaded file will contain clean, organized data.")
     st.markdown("---")
 
     uploaded_file = st.file_uploader("1. Upload your SRT file (.srt)", type="srt", key="srt_excel_uploader")
@@ -452,7 +447,7 @@ def srt_to_excel_page():
             return
 
         with st.spinner('Analyzing SRT data...'):
-            # Use the RAW parser
+            # Use the RAW parser (returns data structure with HTML tags)
             df_raw = parse_srt_raw(srt_content)
         
         if df_raw.empty:
@@ -461,7 +456,7 @@ def srt_to_excel_page():
             
         # Create a CLEANED DataFrame for download and display (Excel format)
         df_cleaned = df_raw.copy()
-        df_cleaned['Dialogue'] = df_cleaned['Dialogue'].apply(clean_dialogue_text_for_excel)
+        df_cleaned['Dialogue'] = df_cleaned['Dialogue'].apply(clean_dialogue_text_for_excel) # Clean dialogue text for Excel/Display
 
 
         st.subheader("📊 Speaker Statistics")
@@ -496,10 +491,9 @@ def srt_to_excel_page():
         
         st.download_button(
             label="💾 Download Analyzed Excel File (.xlsx)",
-            # Use the raw bytes of the output
             data=output.read(), 
             file_name=file_name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.document"
         )
         st.success(f"File ready for download: **{file_name}**!")
 
