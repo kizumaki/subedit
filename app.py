@@ -482,7 +482,8 @@ def srt_to_excel_page():
         st.markdown("---")
         
         output = io.BytesIO()
-        # Save the CLEANED (un-styled) DataFrame for accurate Excel output
+        
+        # FIX: Save the CLEANED DataFrame (df_cleaned) instead of the Styler object
         df_cleaned.to_excel(output, index=False, engine='openpyxl')
         output.seek(0)
 
@@ -500,7 +501,8 @@ def srt_to_excel_page():
 
 def word_formatter_page():
     st.markdown("## 📝 Automatic Word Script Formatter Tool (SRT Input)")
-    st.markdown("⚠️ **FIXED:** This tool now requires a **SRT file** (.srt) as input for correct formatting. It uses advanced parsing to separate speakers and applies professional layout:")
+    st.markdown("⚠️ **REQUIRED INPUT:** This tool **MUST** receive a **SRT file** (.srt) as input for correct formatting. Uploading a DOCX file here will result in an error.")
+    st.markdown("It uses advanced parsing to separate speakers and applies professional layout:")
     st.markdown("- **Title:** Uppercase, 25pt size, centered.")
     st.markdown("- **Timecode:** Bold, minimal line spacing.")
     st.markdown("- **Speaker:** Bold, unique color (per speaker), professional hanging indent and tab stop.")
@@ -523,10 +525,7 @@ def word_formatter_page():
         if st.button("2. RUN AUTOMATIC FORMATTING", key="run_word_formatter"):
             with st.spinner('Processing and formatting file...'):
                 try:
-                    # FIX: Parse the SRT file to get the clean, structured data
                     df_raw = parse_srt_raw(uploaded_file.getvalue().decode('utf-8'))
-                    
-                    # FIX: Build the DOCX directly from the clean data structure
                     modified_file_io = build_formatted_docx_from_df(df_raw, file_name_without_ext)
                     
                     new_filename = f"FORMATTED_{file_name_without_ext}.docx"
