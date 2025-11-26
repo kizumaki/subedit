@@ -16,28 +16,19 @@ from datetime import datetime
 TARGET_FONT = 'Times New Roman'
 TARGET_SIZE_PT = Pt(12)
 
-# --- UTILITIES for WORD FORMATTER ---
+# --- UTILITIES for WORD FORMATTER (Colors and Formatting) ---
 
-# Function to generate a pool of distinct, vibrant RGB colors
 def generate_vibrant_rgb_colors(count=150):
     """Generates a list of highly saturated, distinct RGB colors for speaker highlighting."""
     colors = set()
     while len(colors) < count:
         # Select random Hue, keep Saturation and Value high for vibrancy
-        h = random.random()
-        s = 0.8
-        v = 0.9 
+        h = random.random(); s = 0.8; v = 0.9 
         
         # Convert HSV to RGB
-        if s == 0.0:
-            r = g = b = v
+        if s == 0.0: r = g = b = v
         else:
-            i = int(h * 6.0)
-            f = h * 6.0 - i
-            p = v * (1.0 - s)
-            q = v * (1.0 - s * f)
-            t = v * (1.0 - s * (1.0 - f))
-
+            i = int(h * 6.0); f = h * 6.0 - i; p = v * (1.0 - s); q = v * (1.0 - s * f); t = v * (1.0 - s * (1.0 - f))
             if i % 6 == 0: r, g, b = v, t, p
             elif i % 6 == 1: r, g, b = q, v, p
             elif i % 6 == 2: r, g, b = p, v, t
@@ -47,11 +38,8 @@ def generate_vibrant_rgb_colors(count=150):
         
         r, g, b = int(r * 255), int(g * 255), int(b * 255)
         # Filter out colors too close to pure black/white
-        if (r < 50 and g < 50 and b < 50) or (r > 200 and g > 200 and b > 200):
-            continue 
-            
+        if (r < 50 and g < 50 and b < 50) or (r > 200 and g > 200 and b > 200): continue 
         colors.add((r, g, b))
-    
     return list(colors)
 
 # Initialize global color pool and mapping
@@ -65,29 +53,43 @@ def get_speaker_color(speaker_name):
     global speaker_color_map
     
     if speaker_name not in speaker_color_map:
-        if used_colors:
-            # Pop a unique color from the shuffled pool
-            color_object = used_colors.pop()
-        else:
-            # Fallback (should be rare)
-            r, g, b = random.choice(FONT_COLORS_RGB_150)
-            color_object = RGBColor(r, g, b)
+        if not used_colors:
+            # Reinitialize and shuffle if exhausted
+            used_colors = [RGBColor(r, g, b) for r, g, b in FONT_COLORS_RGB_150]
+            random.shuffle(used_colors)
             
+        color_object = used_colors.pop()
         speaker_color_map[speaker_name] = color_object
         
     return speaker_color_map[speaker_name]
 
-# Regexes for parsing Word documents
-SPEAKER_REGEX = re.compile(r"^([A-Z][a-z\s&]+):\s*", re.IGNORECASE)
-TIMECODE_REGEX = re.compile(r"^\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}$")
-HTML_CONTENT_REGEX = re.compile(r"((?:</?[ibu]>)+)(.*?)(?:</?[ibu]>)+", re.IGNORECASE | re.DOTALL)
+# Regexes for processing dialogue content (must retain tags for Word styling)
+HTML_TAG_REGEX = re.compile(r'(<[ibu]>.*?<\/[ibu]>|<[ibu]/>)', re.IGNORECASE)
+HTML_CONTENT_REGEX = re.compile(r"<([ibu])>(.*?)<\/\1>", re.IGNORECASE | re.DOTALL) 
 
-# --- UTILITIES for EXCEL CONVERTER ---
+def set_font_and_size(run, font_name, font_size):
+    """Applies Font and Size to a specific run."""
+    run.font.name = font_name
+    run.font.size = font_size
+
+def set_all_text_formatting(doc):
+    """Applies Times New Roman 12pt and specific Spacing (Before: 0pt, After: 6pt, Single Line) to all runs/paragraphs."""
+    for paragraph in doc.paragraphs:
+        # Apply Font and Size
+        for run in paragraph.runs:
+            run.font.name = TARGET_FONT
+            run.font.size = TARGET_SIZE_PT
+        
+        # Apply spacing
+        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(6)
+
+# --- UTILITIES for EXCEL CONVERTER (SRT Parsing) ---
 
 MAX_SPEAKER_NAME_LENGTH = 35 
 MAX_SPEAKER_NAME_WORDS = 4 
 
-# List of common non-speaker phrases to explicitly exclude (must be lowercase)
 NON_SPEAKER_PHRASES = [
     "the only problem", "note", "warning", "things", "and on the way we came across this", 
     "this is the highest swing in europe", "and i swear", "which meant", "the only thing is", 
@@ -109,7 +111,6 @@ NON_SPEAKER_PHRASES = [
     "bad news", "good news", "he thought", "3 teams remain"
 ]
 
-# Color palette for distinct speaker styling in Excel/DataFrame preview
 COLOR_PALETTE = [
     'background-color: #ADD8E6; color: #000000', 'background-color: #90EE90; color: #000000', 
     'background-color: #FFB6C1; color: #000000', 'background-color: #FFFFE0; color: #000000', 
@@ -122,49 +123,46 @@ COLOR_PALETTE = [
     'background-color: #8B4513; color: #FFFFFF', 'background-color: #36454F; color: #FFFFFF',
 ]
 
-def clean_dialogue_text(text):
+def clean_dialogue_text_for_excel(text):
     """
     Converts HTML/XML style formatting tags (i, b, u) to text enclosed in parentheses ().
-    Removes any other HTML/XML tags.
+    Removes any other HTML/XML tags. Used specifically for the Excel output.
     """
+    # Convert i, b, u tags to parentheses
     text = re.sub(r'<i[^>]*>(.*?)</i[^>]*>', r'(\1)', text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r'<b[^>]*>(.*?)</b[^>]*>', r'(\1)', text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r'<u[^>]*>(.*?)</u[^>]*>', r'(\1)', text, flags=re.IGNORECASE | re.DOTALL)
+    # Remove any other remaining unknown tags
     text = re.sub(r'<[^>]*>', '', text, flags=re.DOTALL)
     return re.sub(r'\s+', ' ', text).strip()
 
 def is_valid_speaker_tag(tag):
-    """
-    Checks if a tag is likely a speaker name using multiple linguistic heuristics.
-    """
+    """Checks if a tag is likely a speaker name using linguistic heuristics."""
     tag = tag.strip()
     if not tag: return False
     if tag.lower() in NON_SPEAKER_PHRASES: return False
     if len(tag) > MAX_SPEAKER_NAME_LENGTH: return False
-
     normalized_tag = tag.replace(' and ', ' ').replace(' and', '').replace('&', ' ').strip()
     if not normalized_tag: return False
-        
     word_count = len(normalized_tag.split())
     if word_count > MAX_SPEAKER_NAME_WORDS: return False 
-
     first_word = normalized_tag.split()[0] if normalized_tag.split() else normalized_tag
     if first_word[0].isalpha() and first_word[0].islower(): return False
-        
     return True
 
-def parse_srt(srt_content):
+def parse_srt_raw(srt_content):
     """
-    Parses SRT content to extract Start, End timecodes, Speaker, and Dialogue.
-    Handles same-line interjections and multi-line blocks.
+    Parses SRT content to extract Start, End timecodes, Speaker, and RAW Dialogue.
+    (RAW dialogue means HTML tags like <b> and <i> are PRESERVED in the Dialogue column).
     """
     data = []
     blocks = re.split(r'\n\s*\n', srt_content.strip())
     last_known_speaker = "Unknown" 
 
-    def append_row_and_update_state(speaker, dialogue):
+    def append_row_and_update_state_raw(speaker, raw_dialogue):
         nonlocal last_known_speaker
-        data.append([time_start, time_end, speaker, clean_dialogue_text(dialogue)])
+        # Append RAW dialogue text (no cleaning applied here)
+        data.append([time_start, time_end, speaker, raw_dialogue]) 
         last_known_speaker = speaker 
 
     for block in blocks:
@@ -202,7 +200,7 @@ def parse_srt(srt_content):
                         
                         if current_dialogue:
                             speaker_to_use = block_initial_speaker if not data or data[-1][0] != time_start else last_known_speaker
-                            append_row_and_update_state(speaker_to_use, current_dialogue)
+                            append_row_and_update_state_raw(speaker_to_use, current_dialogue)
                             current_dialogue = "" 
                             
                         speaker = speaker_tag
@@ -210,7 +208,7 @@ def parse_srt(srt_content):
                         i += 1
                         
                         if dialogue_segment:
-                            append_row_and_update_state(speaker, dialogue_segment)
+                            append_row_and_update_state_raw(speaker, dialogue_segment)
                             
                         if block_initial_speaker == last_known_speaker:
                              block_initial_speaker = speaker
@@ -229,37 +227,12 @@ def parse_srt(srt_content):
 
         if current_dialogue:
             speaker_to_use = block_initial_speaker if not data or data[-1][0] != time_start else last_known_speaker
-            append_row_and_update_state(speaker_to_use, current_dialogue)
+            append_row_and_update_state_raw(speaker_to_use, current_dialogue)
 
     return pd.DataFrame(data, columns=['Start', 'End', 'Speaker', 'Dialogue'])
 
-def apply_styles(df):
-    """Applies distinct background color styling and text color per speaker for DataFrame preview."""
-    unique_speakers = df['Speaker'].unique()
-    
-    color_map = {
-        speaker: COLOR_PALETTE[i % len(COLOR_PALETTE)]
-        for i, speaker in enumerate(unique_speakers)
-    }
 
-    def highlight_speaker(row):
-        color_style = color_map.get(row['Speaker'], 'background-color: #FFFFFF; color: #000000')
-        return [color_style] * len(row)
-    
-    try:
-        # Use Styler for coloring
-        styled_df = df.style.apply(highlight_speaker, axis=1)
-        return styled_df
-    except Exception:
-        # Fallback if styling fails 
-        return df
-
-# --- CORE FUNCTION: SRT to BASIC WORD ---
-
-def set_font_and_size(run, font_name, font_size):
-    """Applies Font and Size to a specific run."""
-    run.font.name = font_name
-    run.font.size = font_size
+# --- CORE FUNCTION: SRT to BASIC WORD (No Change Needed) ---
 
 def process_srt_to_docx_basic(uploaded_file, file_name_without_ext):
     """Reads SRT file and converts it to DOCX with basic formatting."""
@@ -274,20 +247,19 @@ def process_srt_to_docx_basic(uploaded_file, file_name_without_ext):
         # Add Index
         p_index = document.add_paragraph(f"{sub.index}")
         set_font_and_size(p_index.runs[0], TARGET_FONT, TARGET_SIZE_PT)
-        p_index.paragraph_format.space_after = Pt(0) # No space after index
+        p_index.paragraph_format.space_after = Pt(0) 
 
         # Add Timecode
         timecode_str = f"{sub.start} --> {sub.end}"
         p_timecode = document.add_paragraph(timecode_str)
         set_font_and_size(p_timecode.runs[0], TARGET_FONT, TARGET_SIZE_PT)
-        p_timecode.paragraph_format.space_after = Pt(0) # No space after timecode
+        p_timecode.paragraph_format.space_after = Pt(0)
         
-        # Add Content (cleans up tags)
+        # Add Content (cleans up tags using pysrt)
         p_content = document.add_paragraph(sub.text_without_tags)
-        # Ensure there's a run to format if the text isn't empty
         if p_content.runs:
             set_font_and_size(p_content.runs[0], TARGET_FONT, TARGET_SIZE_PT)
-        p_content.paragraph_format.space_after = Pt(12) # Default spacing after content block
+        p_content.paragraph_format.space_after = Pt(12) 
 
     modified_file = io.BytesIO()
     document.save(modified_file)
@@ -295,23 +267,13 @@ def process_srt_to_docx_basic(uploaded_file, file_name_without_ext):
     
     return modified_file
 
-# --- CORE FUNCTION: WORD SCRIPT FORMATTER ---
+# --- CORE FUNCTION: WORD SCRIPT FORMATTER (FIXED LOGIC) ---
 
-def set_all_text_formatting(doc):
-    """Applies Times New Roman 12pt and specific Spacing (Before: 0pt, After: 6pt, Single Line) to all runs/paragraphs."""
-    for paragraph in doc.paragraphs:
-        # Apply Font and Size
-        for run in paragraph.runs:
-            run.font.name = TARGET_FONT
-            run.font.size = TARGET_SIZE_PT
-        
-        # Apply spacing
-        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
-        paragraph.paragraph_format.space_before = Pt(0)
-        paragraph.paragraph_format.space_after = Pt(6)
-
-def process_docx_formatter(uploaded_file, file_name_without_ext):
-    """Performs advanced document modifications and formatting."""
+def build_formatted_docx_from_df(df_raw, file_name_without_ext):
+    """
+    Builds the final formatted DOCX document from the clean, structured DataFrame 
+    (which contains raw dialogue text with HTML tags).
+    """
     
     # Reset color mapping and color pool for a new file
     global speaker_color_map
@@ -319,10 +281,6 @@ def process_docx_formatter(uploaded_file, file_name_without_ext):
     speaker_color_map = {}
     used_colors = [RGBColor(r, g, b) for r, g, b in FONT_COLORS_RGB_150]
     random.shuffle(used_colors)
-    
-    original_document = Document(io.BytesIO(uploaded_file.getvalue()))
-    # Filter out empty paragraphs
-    raw_paragraphs = [p for p in original_document.paragraphs if p.text.strip()]
     
     document = Document()
     
@@ -341,93 +299,77 @@ def process_docx_formatter(uploaded_file, file_name_without_ext):
     document.add_paragraph().paragraph_format.space_after = Pt(0)
     document.add_paragraph().paragraph_format.space_after = Pt(0)
 
-    # --- B. Process raw paragraphs and add to new document ---
+    # --- B. Process DataFrame rows and add to new document ---
     
-    for paragraph in raw_paragraphs:
-        text = paragraph.text.strip()
+    # Group by Timecode to ensure all dialogues under the same time block are together
+    grouped_rows = df_raw.groupby(['Start', 'End'])
+    
+    for (start_time, end_time), rows in grouped_rows:
         
-        # B.1 Remove SRT Line Numbers
-        if re.fullmatch(r"^\s*\d+\s*$", text):
-            continue 
-            
-        new_paragraph = document.add_paragraph()
-        new_paragraph.style = document.styles['Normal']
-        new_paragraph.paragraph_format.space_before = Pt(0) 
-        new_paragraph.paragraph_format.space_after = Pt(6) 
-        
-        # B.2 Bold Timecode (Override Space After = 0 for close proximity)
-        if TIMECODE_REGEX.match(text):
-            new_paragraph.text = text
-            for run in new_paragraph.runs:
-                run.font.bold = True
-            new_paragraph.paragraph_format.space_after = Pt(0) 
+        # B.1 Add Timecode (Bold)
+        timecode_str = f"{start_time} --> {end_time}"
+        time_paragraph = document.add_paragraph(timecode_str)
+        time_paragraph.paragraph_format.space_after = Pt(0) # Minimal space after timecode
 
-        # B.3 Content (Speaker/Content)
-        else:
+        for run in time_paragraph.runs:
+            run.font.bold = True
             
-            speaker_match = SPEAKER_REGEX.match(text)
+        # B.2 Add Dialogue rows
+        for index, row in rows.iterrows():
+            speaker_name = row['Speaker']
+            dialogue_text = row['Dialogue']
             
-            if speaker_match:
-                # 1. Set Hanging Indent and Tab Stop for speaker alignment
+            new_paragraph = document.add_paragraph()
+            new_paragraph.style = document.styles['Normal']
+            new_paragraph.paragraph_format.space_before = Pt(0) 
+            new_paragraph.paragraph_format.space_after = Pt(6) 
+            
+            # Speaker and Indent Formatting
+            if speaker_name not in ["Unknown", ""]:
+                # Apply Hanging Indent (1 inch) and Tab Stop
                 new_paragraph.paragraph_format.left_indent = Inches(1.0)
                 new_paragraph.paragraph_format.first_line_indent = Inches(-1.0)
                 new_paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.0), WD_TAB_ALIGNMENT.LEFT)
                 
-                speaker_full = speaker_match.group(0) 
-                speaker_name = speaker_match.group(1).strip()
-                
-                # Get unique color
+                # 1. Run for the speaker name (Bold and Font Color)
+                speaker_tag = f"{speaker_name}:"
                 font_color_object = get_speaker_color(speaker_name) 
-                rest_of_text = text[len(speaker_full):]
                 
-                # Run for the speaker name (Bold and Font Color)
-                run_speaker = new_paragraph.add_run(speaker_full)
+                run_speaker = new_paragraph.add_run(speaker_tag)
                 run_speaker.font.bold = True
                 run_speaker.font.color.rgb = font_color_object 
                 
-                # Insert Tab character for alignment
+                # 2. Insert Tab character
                 new_paragraph.add_run('\t') 
-                
-                current_text = rest_of_text
                 
             else:
                 # No speaker -> No indent
                 new_paragraph.paragraph_format.left_indent = None
                 new_paragraph.paragraph_format.first_line_indent = None
-                current_text = text
-
-
-            # --- B.4 Process HTML tags within the current_text ---
-            
-            matches = list(HTML_CONTENT_REGEX.finditer(current_text))
-            last_end = 0
-            
-            # Clear original text if we are reconstructing the paragraph (which is always true here)
-            if not speaker_match:
-                 new_paragraph.text = "" 
-
-            for match in matches:
-                tag_text = match.group(2) 
-                start, end = match.span()
-
-                # Add text BEFORE the tag (if any)
-                if start > last_end:
-                    new_paragraph.add_run(current_text[last_end:start])
                 
-                # Add the HTML content (Bold and Italic)
-                run_html = new_paragraph.add_run(tag_text)
-                run_html.font.bold = True
-                run_html.font.italic = True
-                
-                last_end = end
-
-            # Add remaining text AFTER the last tag
-            if last_end < len(current_text):
-                new_paragraph.add_run(current_text[last_end:])
+            # B.3 Process Dialogue Content for HTML Tags (i, b, u)
             
-            # Handle case with no tag and no speaker (plain text)
-            elif not speaker_match and not matches:
-                new_paragraph.add_run(current_text)
+            # Split the RAW dialogue text by the HTML tags to separate styled and unstyled parts
+            parts = re.split(HTML_TAG_REGEX, dialogue_text)
+            
+            for part in parts:
+                if not part:
+                    continue
+
+                html_match = HTML_CONTENT_REGEX.match(part)
+                
+                if html_match:
+                    tag = html_match.group(1).lower()
+                    content = html_match.group(2)
+                    
+                    run = new_paragraph.add_run(content)
+                    # Apply Bold for both <b> and <i> tags
+                    run.font.bold = True 
+                    # Apply Italic only for <i> tags
+                    run.font.italic = (tag == 'i')
+                else:
+                    # Regular text (unstyled)
+                    new_paragraph.add_run(part)
 
     # C. Apply General Font/Size and Spacing (Global settings)
     set_all_text_formatting(document)
@@ -489,6 +431,10 @@ def srt_to_excel_page():
     st.markdown("## 📊 Analyze & Convert SRT to Excel (.xlsx)")
     st.markdown("This function analyzes the SRT file to extract detailed dialogue and corresponding speaker, then exports to an Excel file. Highly useful for data control or content analysis.")
     st.markdown("---")
+    
+    # NOTE FOR USER: This section explains why coloring is not in the download
+    st.warning("⚠️ **Note on Excel Formatting:** The colorful highlighting you see in the preview is for the web display only and CANNOT be included in the downloaded Excel (.xlsx) file due to file format limitations. The downloaded file will contain clean, organized data.")
+    st.markdown("---")
 
     uploaded_file = st.file_uploader("1. Upload your SRT file (.srt)", type="srt", key="srt_excel_uploader")
 
@@ -506,15 +452,21 @@ def srt_to_excel_page():
             return
 
         with st.spinner('Analyzing SRT data...'):
-            df_converted = parse_srt(srt_content)
+            # Use the RAW parser
+            df_raw = parse_srt_raw(srt_content)
         
-        if df_converted.empty:
+        if df_raw.empty:
             st.error("Could not parse any subtitles.")
             return
+            
+        # Create a CLEANED DataFrame for download and display (Excel format)
+        df_cleaned = df_raw.copy()
+        df_cleaned['Dialogue'] = df_cleaned['Dialogue'].apply(clean_dialogue_text_for_excel)
+
 
         st.subheader("📊 Speaker Statistics")
         
-        unique_speakers = df_converted['Speaker'].unique()
+        unique_speakers = df_cleaned['Speaker'].unique()
         actual_speakers = [s for s in unique_speakers if s not in ["Unknown", ""]]
         speaker_count = len(actual_speakers)
 
@@ -526,16 +478,17 @@ def srt_to_excel_page():
         else:
             st.info("No clear speakers found.")
             
-        st.subheader("Converted Data Preview")
+        st.subheader("Converted Data Preview (Web Styling Only)")
         
-        styled_df_display = apply_styles(df_converted)
+        # Apply styling ONLY for the web preview
+        styled_df_display = apply_styles(df_cleaned)
         st.dataframe(styled_df_display, use_container_width=True)
 
         st.markdown("---")
         
         output = io.BytesIO()
-        # Save to Excel
-        df_converted.to_excel(output, index=False, engine='openpyxl')
+        # Save the CLEANED (un-styled) DataFrame for accurate Excel output
+        df_cleaned.to_excel(output, index=False, engine='openpyxl')
         output.seek(0)
 
         original_name_base = uploaded_file.name.rsplit('.', 1)[0]
@@ -543,7 +496,8 @@ def srt_to_excel_page():
         
         st.download_button(
             label="💾 Download Analyzed Excel File (.xlsx)",
-            data=output.read(),
+            # Use the raw bytes of the output
+            data=output.read(), 
             file_name=file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
@@ -551,19 +505,19 @@ def srt_to_excel_page():
 
 
 def word_formatter_page():
-    st.markdown("## 📝 Automatic Word Script Formatter Tool (.docx)")
-    st.markdown("This function automatically formats a Word script file (often converted from SRT) according to professional rules:")
+    st.markdown("## 📝 Automatic Word Script Formatter Tool (SRT Input)")
+    st.markdown("⚠️ **FIXED:** This tool now requires a **SRT file** (.srt) as input for correct formatting. It uses advanced parsing to separate speakers and applies professional layout:")
     st.markdown("- **Title:** Uppercase, 25pt size, centered.")
-    st.markdown("- **Timecode:** Bold, no line spacing.")
+    st.markdown("- **Timecode:** Bold, minimal line spacing.")
     st.markdown("- **Speaker:** Bold, unique color (per speaker), professional hanging indent and tab stop.")
-    st.markdown("- **HTML content (e.g., `<i>`):** Convert to Bold and Italic.")
+    st.markdown("- **HTML tags (e.g., `<i>` or `<b>`):** Converted to Bold/Italic formatting in the Word document.")
     st.markdown("---")
 
     uploaded_file = st.file_uploader(
-        "1. Upload your Word file (.docx)",
-        type=['docx'],
+        "1. Upload your SRT file (.srt)",
+        type=['srt'],
         key="word_formatter_uploader",
-        help="Only Microsoft Word .docx format is accepted."
+        help="Please upload an SRT file for formatting."
     )
 
     if uploaded_file is not None:
@@ -575,9 +529,13 @@ def word_formatter_page():
         if st.button("2. RUN AUTOMATIC FORMATTING", key="run_word_formatter"):
             with st.spinner('Processing and formatting file...'):
                 try:
-                    modified_file_io = process_docx_formatter(uploaded_file, file_name_without_ext)
+                    # FIX: Parse the SRT file to get the clean, structured data
+                    df_raw = parse_srt_raw(uploaded_file.getvalue().decode('utf-8'))
                     
-                    new_filename = f"FORMATTED_{original_filename}"
+                    # FIX: Build the DOCX directly from the clean data structure
+                    modified_file_io = build_formatted_docx_from_df(df_raw, file_name_without_ext)
+                    
+                    new_filename = f"FORMATTED_{file_name_without_ext}.docx"
 
                     st.success("✅ Formatting complete! You can download the file.")
                     
@@ -593,7 +551,7 @@ def word_formatter_page():
 
                 except Exception as e:
                     st.error(f"An error occurred during processing: {e}")
-                    st.warning("Please check the format of the input file.")
+                    st.warning("Please check the format of the input SRT file.")
 
 
 # --------------------------------------------------------------------------------
