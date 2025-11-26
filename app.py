@@ -14,7 +14,7 @@ from datetime import datetime
 
 # --- GLOBAL CONFIGURATION (Unified) ---
 TARGET_FONT = 'Times New Roman'
-TARGET_SIZE_PT = Pt(12) # Used by all DOCX functions
+TARGET_SIZE_PT = Pt(12) 
 MAX_SPEAKER_NAME_LENGTH = 35 
 MAX_SPEAKER_NAME_WORDS = 4 
 
@@ -82,6 +82,7 @@ FONT_COLORS_RGB_150 = generate_vibrant_rgb_colors(150)
 speaker_color_map = {}
 used_colors = []
 
+# FIX: Ensure get_speaker_color always pulls RGBColor objects correctly
 def get_speaker_color(speaker_name):
     """Assigns and retrieves a unique color for a given speaker name (for Word Formatter)."""
     global used_colors
@@ -89,12 +90,20 @@ def get_speaker_color(speaker_name):
     
     if speaker_name not in speaker_color_map:
         if not used_colors:
-            used_colors = [RGBColor(r, g, b) for r, g, b in FONT_COLORS_RGB_150]
-            random.shuffle(used_colors)
+            # Reinitialize and shuffle if exhausted
+            used_colors_raw = [RGBColor(r, g, b) for r, g, b in FONT_COLORS_RGB_150]
+            random.shuffle(used_colors_raw)
+            used_colors = used_colors_raw
             
-        color_object = used_colors.pop()
-        speaker_color_map[speaker_name] = color_object
-        
+        # FIX: Ensure we handle the case where the list might be empty after shuffling, although unlikely
+        if used_colors:
+            color_object = used_colors.pop()
+            speaker_color_map[speaker_name] = color_object
+            return color_object
+        else:
+            # Fallback to black if color generation somehow fails completely
+            return RGBColor(0, 0, 0)
+    
     return speaker_color_map[speaker_name]
 
 # --- CORE LOGIC FUNCTIONS ---
@@ -284,8 +293,7 @@ def process_docx(uploaded_file, file_name_without_ext):
     global speaker_color_map
     global used_colors
     speaker_color_map = {}
-    used_colors = [RGBColor(r, g, b) for r, g, b in FONT_COLORS_RGB_150]
-    random.shuffle(used_colors)
+    used_colors = [] # Reset used colors
     
     # Load the DOCX file uploaded by the user
     original_document = Document(io.BytesIO(uploaded_file.getvalue()))
@@ -342,6 +350,7 @@ def process_docx(uploaded_file, file_name_without_ext):
                 speaker_full = speaker_match.group(0) 
                 speaker_name = speaker_match.group(1).strip()
                 
+                # FIX: Call the fixed color function
                 font_color_object = get_speaker_color(speaker_name) 
                 rest_of_text = text[len(speaker_full):]
                 
@@ -514,7 +523,7 @@ def srt_to_excel_page():
             file_name=file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        st.success(f"File ready for download: **{file_name}**!")
+        st.success(f"File ready for download as **{file_name}**!")
 
 
 def word_formatter_page():
